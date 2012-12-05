@@ -43,25 +43,31 @@ AttachmentSchema.add({
 // A couple of methods to save references inside the documents by using only
 // the _id instead of creating a subdocument.
 PostSchema.methods.attach = function(attachment, callback) {
-	this.attachments.push(attachment)
-	return this.save(callback);
-}
+	var post = this;
+	this.attachments.push(attachment);
+	this.save(function(err) {
+		attachment.posts.push(post);
+		attachment.save(callback);
+	});
+};
 AttachmentSchema.methods.share = function(post, callback) {
-	this.posts.push(post)
-	return this.save(callback);
-}
+	var attachment = this;
+	this.posts.push(post);
+	this.save(function(err) {
+		post.attachments.push(attachment);
+		post.save(callback);
+	});
+};
 
 // Models definition
 var Post = mongoose.model('Post', PostSchema, 'posts');
 var Attachment = mongoose.model('Attachment', AttachmentSchema, 'attachments');
 
-var p, a;
-
 // Go parallel!
 async.parallel({
 	post: function(callback) {
 		console.log('creating a post');
-		p = new Post({
+		var p = new Post({
 			title: 'Test post (' + Date.now() + ')',
 			content: 'Test post (' + Date.now() + ')'
 		});
@@ -69,7 +75,7 @@ async.parallel({
 	},
 	attachment: function(callback) {
 		console.log('creating an attachment');
-		a = new Attachment({
+		var a = new Attachment({
 			fileName: 'test_' + Date.now() + '.txt'
 		});
 		a.save(callback);
@@ -77,32 +83,38 @@ async.parallel({
 }, function(err, res) {
 	// Once we have a new post and a new attachment, create a relation on each one,
 	// this is only a demo of having the reference of each other but it is not required.
-
-	// Go parallel (one more time :D)!
-	async.parallel({
-		attach: function(callback) {
-			console.log('attaching to a post');
-			p.attach(a, callback);
-		},
-		share: function(callback) {
-			console.log('sharing an attachment');
-			a.share(p, callback);
-		}
-	}, function(err, res) {
+	res.post[0].attach(res.attachment[0], function(err, res) {
 		// Dump the current data, just to see if it is working ;)
-		Post.find().populate('attachments').exec(function(err, posts) {
-			if (err) {
-				mongoose.disconnect();
-				return console.log(':(');
-			}
+		async.series([function(callback) {
+			// Read all our posts and their attachments
+			Post.find().populate('attachments').exec(function(err, posts) {
+				if (err) {
+					return callback(err);
+				}
 
-			posts.forEach(function(post){
-				console.log('Post ' + post.title + ' has ' + post.attachments.length + ' attachment(s):');
-				post.attachments.forEach(function(attachment) {
-					console.log('- Filename: ' + attachment.fileName);
+				posts.forEach(function(post) {
+					console.log('Post ' + post.title + ' has ' + post.attachments.length + ' attachment(s):');
+					post.attachments.forEach(function(attachment) {
+						console.log('- Filename: ' + attachment.fileName);
+					});
 				});
+				callback();
 			});
-
+		}, function(callback) {
+			// Read all our attachments and their posts
+			Attachment.find().populate('posts').exec(function(err, attachments) {
+				if (err) {
+					return callback(err);
+				}
+				attachments.forEach(function(attachment) {
+					console.log('Attachment ' + attachment.fileName + ' is shared in ' + attachment.posts.length + ' post(s):');
+					attachment.posts.forEach(function(post) {
+						console.log('- Post: ' + post.title);
+					});
+				});
+				callback();
+			});
+		}], function(err) {
 			mongoose.disconnect();
 		});
 	});
