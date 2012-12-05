@@ -1,0 +1,12 @@
+{
+  "name": "mongoose-circular",
+  "version": "0.1.0",
+  "description": "Testing circular references on Mongoose",
+  "main": "index.js",
+  "author": "Erick Ruiz de Chavez",
+  "license": "MIT",
+  "dependencies": {
+    "mongoose": "~3.4.0",
+    "async": "~0.1.22"
+  }
+}
